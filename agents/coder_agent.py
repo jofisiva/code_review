@@ -1,12 +1,16 @@
 from agents.base_agent import BaseAgent
-from config import OPENAI_MODEL_CODER
+from config import OPENAI_MODEL_CODER, USE_LOCAL_LLM
 
 class CoderAgent(BaseAgent):
     """Agent that acts as a coder, analyzing code changes and explaining them."""
     
-    def __init__(self):
-        """Initialize the coder agent with the configured model."""
-        super().__init__(OPENAI_MODEL_CODER)
+    def __init__(self, use_local_llm: bool = False):
+        """Initialize the coder agent with the configured model.
+        
+        Args:
+            use_local_llm: Whether to use a local LLM instead of OpenAI
+        """
+        super().__init__(OPENAI_MODEL_CODER, use_local_llm=use_local_llm or USE_LOCAL_LLM)
         self.system_message = """
         You are an expert software developer tasked with explaining code changes in a pull request.
         Your job is to:

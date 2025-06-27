@@ -1,12 +1,16 @@
 from agents.base_agent import BaseAgent
-from config import OPENAI_MODEL_REVIEWER
+from config import OPENAI_MODEL_REVIEWER, USE_LOCAL_LLM
 
 class ReviewerAgent(BaseAgent):
     """Agent that acts as a code reviewer, providing feedback on code changes."""
     
-    def __init__(self):
-        """Initialize the reviewer agent with the configured model."""
-        super().__init__(OPENAI_MODEL_REVIEWER)
+    def __init__(self, use_local_llm: bool = False):
+        """Initialize the reviewer agent with the configured model.
+        
+        Args:
+            use_local_llm: Whether to use a local LLM instead of OpenAI
+        """
+        super().__init__(OPENAI_MODEL_REVIEWER, use_local_llm=use_local_llm or USE_LOCAL_LLM)
         self.system_message = """
         You are an expert code reviewer with years of experience in software development.
         Your job is to:

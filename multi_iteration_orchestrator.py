@@ -3,15 +3,30 @@ from langgraph_agents import create_pr_review_graph, PRReviewState
 import time
 import json
 import os
-from typing import Dict, List, Any, Literal
+from typing import Dict, List, Any, Literal, Optional, Union
+from config import USE_LOCAL_LLM, LOCAL_LLM_MODEL, LOCAL_LLM_API_TYPE
+from agents.coder_agent import CoderAgent
+from agents.reviewer_agent import ReviewerAgent
+from local_llm_client import LocalLLMLangChain
 
 class MultiIterationReviewOrchestrator:
     """Orchestrates the code review process across multiple PR iterations."""
     
-    def __init__(self):
-        """Initialize the orchestrator with Azure DevOps client and LangGraph."""
+    def __init__(self, use_local_llm: bool = False):
+        """Initialize the orchestrator with Azure DevOps client and LangGraph.
+        
+        Args:
+            use_local_llm: Whether to use a local LLM instead of OpenAI
+        """
         self.azure_client = AzureDevOpsIterationClient()
-        self.pr_review_graph = create_pr_review_graph()
+        self.use_local_llm = use_local_llm or USE_LOCAL_LLM
+        
+        # Create agents with appropriate LLM setting
+        self.coder_agent = CoderAgent(use_local_llm=self.use_local_llm)
+        self.reviewer_agent = ReviewerAgent(use_local_llm=self.use_local_llm)
+        
+        # Create LangGraph with appropriate LLM setting
+        self.pr_review_graph = create_pr_review_graph(use_local_llm=self.use_local_llm)
         
     def review_pull_request(self, pull_request_id, output_dir="reviews", iteration_id=None, latest_only=False):
         """

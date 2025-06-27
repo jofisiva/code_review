@@ -5,8 +5,9 @@ from langgraph_agents import create_file_review_graph, FileReviewState
 import time
 import json
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Literal
 import re
+from config import USE_LOCAL_LLM
 
 class IterativeImprovementLoop:
     """
@@ -14,12 +15,17 @@ class IterativeImprovementLoop:
     and the Coder Agent applies those suggestions until all review comments are resolved.
     """
     
-    def __init__(self):
-        """Initialize the iterative improvement loop with agents."""
-        self.coder_agent = CoderAgent()
-        self.reviewer_agent = ReviewerAgent()
+    def __init__(self, use_local_llm: bool = False):
+        """Initialize the iterative improvement loop with agents.
+        
+        Args:
+            use_local_llm: Whether to use a local LLM instead of OpenAI
+        """
+        self.use_local_llm = use_local_llm or USE_LOCAL_LLM
+        self.coder_agent = CoderAgent(use_local_llm=self.use_local_llm)
+        self.reviewer_agent = ReviewerAgent(use_local_llm=self.use_local_llm)
         self.azure_client = AzureDevOpsIterationClient()
-        self.file_review_graph = create_file_review_graph()
+        self.file_review_graph = create_file_review_graph(use_local_llm=self.use_local_llm)
         
     def improve_code(self, pull_request_id, file_path, old_content, new_content, 
                      max_iterations=3, output_dir="reviews/improvements"):
@@ -61,7 +67,8 @@ class IterativeImprovementLoop:
                 new_content=current_content,
                 coder_analysis="",
                 reviewer_analysis="",
-                status="analyzing"
+                status="analyzing",
+                use_local_llm=self.use_local_llm  # Pass the use_local_llm flag to the graph
             )
             
             # Execute the file review graph
@@ -255,9 +262,14 @@ class BatchImprovementProcessor:
     Process multiple files for iterative improvement.
     """
     
-    def __init__(self):
-        """Initialize the batch processor."""
-        self.improvement_loop = IterativeImprovementLoop()
+    def __init__(self, use_local_llm: bool = False):
+        """Initialize the batch processor.
+        
+        Args:
+            use_local_llm: Whether to use a local LLM instead of OpenAI
+        """
+        self.use_local_llm = use_local_llm or USE_LOCAL_LLM
+        self.improvement_loop = IterativeImprovementLoop(use_local_llm=self.use_local_llm)
         self.azure_client = AzureDevOpsIterationClient()
         
     def process_pull_request(self, pull_request_id, max_iterations=3, output_dir="reviews/improvements"):

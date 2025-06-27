@@ -55,6 +55,11 @@
                         <input type="checkbox" class="form-check-input" id="use_langgraph" name="use_langgraph" value="yes" checked>
                         <label class="form-check-label" for="use_langgraph">Use LangGraph multi-agent workflow</label>
                     </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_local_llm" name="use_local_llm" value="yes">
+                        <label class="form-check-label" for="use_local_llm">Use Local LLM (instead of OpenAI)</label>
+                        <small class="form-text text-muted d-block">Requires a local LLM server (Ollama, LM Studio, etc.) running</small>
+                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-play me-2"></i>Start Review
                     </button>

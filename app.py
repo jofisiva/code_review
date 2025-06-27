@@ -9,6 +9,7 @@ from pygments import highlight
 from pygments.lexers import get_lexer_by_name, guess_lexer
 from pygments.formatters import HtmlFormatter
 import difflib
+from config import USE_LOCAL_LLM, LOCAL_LLM_MODEL, LOCAL_LLM_API_URL, LOCAL_LLM_API_TYPE
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -72,11 +73,14 @@ def start_review():
         review_iterations = request.form.get('review_iterations')
         iteration_id = request.form.get('iteration_id')
         
+        # Check if local LLM should be used
+        use_local_llm = request.form.get('use_local_llm') == 'yes' or USE_LOCAL_LLM
+        
         if iteration_id:
             iteration_id = int(iteration_id)
         
         # Create the orchestrator
-        orchestrator = MultiIterationReviewOrchestrator()
+        orchestrator = MultiIterationReviewOrchestrator(use_local_llm=use_local_llm)
         
         # Handle different review modes
         if review_iterations == 'specific' and iteration_id:
@@ -96,7 +100,7 @@ def start_review():
             flash('Starting iterative code improvement based on review comments', 'info')
             try:
                 # Create batch improvement processor
-                improvement_processor = BatchImprovementProcessor()
+                improvement_processor = BatchImprovementProcessor(use_local_llm=use_local_llm)
                 
                 # Set max iterations from form or default to 3
                 max_iterations = int(request.form.get('max_iterations', 3))

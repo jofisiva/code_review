@@ -1,4 +1,4 @@
-from typing import Dict, List, Annotated, TypedDict, Literal, Union, Any
+from typing import Dict, List, Annotated, TypedDict, Literal, Union, Any, Optional
 import json
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
@@ -8,7 +8,8 @@ from langchain.tools import Tool
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain import hub
 from langchain.prompts import PromptTemplate
-from config import OPENAI_MODEL_CODER, OPENAI_MODEL_REVIEWER, OPENAI_API_KEY
+from config import OPENAI_MODEL_CODER, OPENAI_MODEL_REVIEWER, OPENAI_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_API_URL, LOCAL_LLM_API_TYPE
+from local_llm_client import LocalLLMLangChain
 
 # Define the state for our graph
 class FileReviewState(TypedDict):
@@ -35,13 +36,28 @@ class PRReviewState(TypedDict):
     status: Literal["fetching_files", "reviewing_files", "summarizing", "completed"]
 
 # Coder Agent Node
-def create_coder_agent():
-    """Create a Coder agent that analyzes code changes."""
-    llm = ChatOpenAI(
-        model=OPENAI_MODEL_CODER,
-        temperature=0.3,
-        api_key=OPENAI_API_KEY
-    )
+def create_coder_agent(use_local_llm: bool = False):
+    """Create a Coder agent that analyzes code changes.
+    
+    Args:
+        use_local_llm: Whether to use a local LLM instead of OpenAI
+    """
+    if not use_local_llm:
+        # Use OpenAI
+        llm = ChatOpenAI(
+            model=OPENAI_MODEL_CODER,
+            temperature=0.3,
+            api_key=OPENAI_API_KEY
+        )
+    else:
+        # Use local LLM
+        llm = LocalLLMLangChain(
+            model_name=LOCAL_LLM_MODEL,
+            api_base_url=LOCAL_LLM_API_URL,
+            api_type=LOCAL_LLM_API_TYPE,
+            temperature=0.3,
+            max_tokens=4000
+        )
     
     coder_prompt = """
     You are an expert software developer tasked with explaining code changes in a pull request.
@@ -103,13 +119,28 @@ def create_coder_agent():
     return analyze_code_changes
 
 # Reviewer Agent Node
-def create_reviewer_agent():
-    """Create a Reviewer agent that reviews code changes."""
-    llm = ChatOpenAI(
-        model=OPENAI_MODEL_REVIEWER,
-        temperature=0.4,
-        api_key=OPENAI_API_KEY
-    )
+def create_reviewer_agent(use_local_llm: bool = False):
+    """Create a Reviewer agent that reviews code changes.
+    
+    Args:
+        use_local_llm: Whether to use a local LLM instead of OpenAI
+    """
+    if not use_local_llm:
+        # Use OpenAI
+        llm = ChatOpenAI(
+            model=OPENAI_MODEL_REVIEWER,
+            temperature=0.4,
+            api_key=OPENAI_API_KEY
+        )
+    else:
+        # Use local LLM
+        llm = LocalLLMLangChain(
+            model_name=LOCAL_LLM_MODEL,
+            api_base_url=LOCAL_LLM_API_URL,
+            api_type=LOCAL_LLM_API_TYPE,
+            temperature=0.4,
+            max_tokens=4000
+        )
     
     reviewer_prompt = """
     You are an expert code reviewer with years of experience in software development.
@@ -179,13 +210,28 @@ def create_reviewer_agent():
     return review_code_changes
 
 # Summary Agent Node
-def create_summary_agent():
-    """Create a Summary agent that provides an overall review of all files."""
-    llm = ChatOpenAI(
-        model=OPENAI_MODEL_REVIEWER,
-        temperature=0.4,
-        api_key=OPENAI_API_KEY
-    )
+def create_summary_agent(use_local_llm: bool = False):
+    """Create a Summary agent that provides an overall review of all files.
+    
+    Args:
+        use_local_llm: Whether to use a local LLM instead of OpenAI
+    """
+    if not use_local_llm:
+        # Use OpenAI
+        llm = ChatOpenAI(
+            model=OPENAI_MODEL_REVIEWER,
+            temperature=0.4,
+            api_key=OPENAI_API_KEY
+        )
+    else:
+        # Use local LLM
+        llm = LocalLLMLangChain(
+            model_name=LOCAL_LLM_MODEL,
+            api_base_url=LOCAL_LLM_API_URL,
+            api_type=LOCAL_LLM_API_TYPE,
+            temperature=0.4,
+            max_tokens=4000
+        )
     
     summary_prompt = """
     You are tasked with providing an overall summary review of a pull request based on the individual file reviews.
@@ -247,14 +293,18 @@ def create_summary_agent():
     return generate_summary
 
 # Create the file review graph
-def create_file_review_graph():
-    """Create a graph for reviewing a single file."""
+def create_file_review_graph(use_local_llm: bool = False):
+    """Create a graph for reviewing a single file.
+    
+    Args:
+        use_local_llm: Whether to use a local LLM instead of OpenAI
+    """
     # Create the graph
     graph = StateGraph(FileReviewState)
     
     # Add nodes
-    graph.add_node("coder", create_coder_agent())
-    graph.add_node("reviewer", create_reviewer_agent())
+    graph.add_node("coder", create_coder_agent(use_local_llm=use_local_llm))
+    graph.add_node("reviewer", create_reviewer_agent(use_local_llm=use_local_llm))
     
     # Add edges
     graph.add_edge("coder", "reviewer")
@@ -267,8 +317,12 @@ def create_file_review_graph():
     return graph.compile()
 
 # Create the PR review graph
-def create_pr_review_graph():
-    """Create a graph for reviewing an entire pull request."""
+def create_pr_review_graph(use_local_llm: bool = False):
+    """Create a graph for reviewing an entire pull request.
+    
+    Args:
+        use_local_llm: Whether to use a local LLM instead of OpenAI
+    """
     # Create the graph
     graph = StateGraph(PRReviewState)
     
@@ -295,8 +349,12 @@ def create_pr_review_graph():
             status="analyzing"
         )
         
+        # Get the use_local_llm parameter from the state if available
+        # This is a bit of a hack since we can't easily pass parameters through the graph
+        use_local_llm = state.get("use_local_llm", False)
+        
         # Process the file through the file review graph
-        file_review_graph = create_file_review_graph()
+        file_review_graph = create_file_review_graph(use_local_llm=use_local_llm)
         final_file_state = file_review_graph.invoke(file_state)
         
         # Update the file in the PR state
@@ -310,7 +368,7 @@ def create_pr_review_graph():
     
     # Add nodes
     graph.add_node("process_file", process_file)
-    graph.add_node("summarize", create_summary_agent())
+    graph.add_node("summarize", create_summary_agent(use_local_llm=use_local_llm))
     
     # Add conditional edges
     def should_continue_processing(state: PRReviewState) -> str:

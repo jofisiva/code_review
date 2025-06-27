@@ -7,6 +7,7 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
 - **Multiple AI Agents**:
   - **Coder Agent**: Analyzes and explains code changes, providing context about why changes were made
   - **Reviewer Agent**: Reviews code critically, identifying bugs, security issues, and suggesting improvements
+    - **PR Review Checklist Support**: Optionally append a general and/or Java-specific checklist to every review summary. See below for details.
   - **Iteration Analyzer**: Analyzes changes across multiple iterations of a pull request, tracking how code evolves
   - **Iterative Improvement Loop**: Automatically applies Reviewer Agent suggestions through the Coder Agent until all issues are resolved
   - **Local LLM Support**: Use local LLM models (Ollama, LM Studio, etc.) instead of OpenAI API
@@ -80,6 +81,42 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
 
 ## Usage
 
+### PR Review Checklist Feature
+
+You can now optionally include detailed checklists in your PR review summaries:
+
+- **General PR Review Checklist**: Covers code quality, testing, documentation, and best practices for any language.
+- **Java-Specific Checklist**: Covers Java naming conventions, access modifiers, resource management, Javadoc, and more.
+
+#### How to Enable Checklists
+
+- **Via Orchestrator/Programmatic Use:**
+  Pass the following arguments to `review_pull_request`:
+  ```python
+  orchestrator.review_pull_request(
+      pull_request_id=..., 
+      include_checklist=True,           # General checklist
+      include_java_checklist=True       # Java checklist if Java files present
+  )
+  ```
+  You can enable either, both, or neither checklist.
+
+- **Via CLI or UI:**
+  If integrating into your CLI or web UI, expose toggles or flags for `include_checklist` and `include_java_checklist` when starting a review.
+
+#### How It Works
+- The general checklist is always included if enabled.
+- The Java checklist is only included if enabled **and** the PR contains `.java` files.
+- Both checklists are appended to the end of the summary review for maximum reviewer and developer visibility.
+
+#### Test Scripts
+- `test_mock_orchestrator_checklist.py`: Demonstrates checklist logic for generic code reviews.
+- `test_java_review_checklist.py`: Demonstrates checklist logic for Java code reviews.
+
+#### Extending for Other Languages
+- Add additional language-specific checklists to `pr_review_checklist.py`.
+- Update `ReviewerAgent` to detect and append the relevant checklist for each language.
+
 ### Running the Web Application
 
 1. Start the Flask application:
@@ -100,12 +137,12 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
    - Fetch the pull request details from Azure DevOps
    - Analyze each changed file using the Coder agent
    - Review each changed file using the Reviewer agent
-   - Generate a summary review
+   - Generate a summary review (with optional checklists)
    - For multi-iteration reviews, generate a cross-iteration analysis
    - Optionally post comments to the pull request
 
 6. View the results in the web interface, including:
-   - Summary review
+   - Summary review (with checklists if enabled)
    - File-by-file reviews
    - Code diffs with syntax highlighting
    - Side-by-side comparison of code changes and AI analyses

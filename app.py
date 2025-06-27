@@ -76,11 +76,14 @@ def start_review():
         # Check if local LLM should be used
         use_local_llm = request.form.get('use_local_llm') == 'yes' or USE_LOCAL_LLM
         
+        # Check if comments should be automatically posted to PR
+        auto_post_comments = request.form.get('auto_post_comments') == 'yes'
+        
         if iteration_id:
             iteration_id = int(iteration_id)
         
         # Create the orchestrator
-        orchestrator = MultiIterationReviewOrchestrator(use_local_llm=use_local_llm)
+        orchestrator = MultiIterationReviewOrchestrator(use_local_llm=use_local_llm, auto_post_comments=auto_post_comments)
         
         # Handle different review modes
         if review_iterations == 'specific' and iteration_id:

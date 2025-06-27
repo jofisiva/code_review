@@ -3,6 +3,7 @@ from langgraph_agents import create_pr_review_graph, PRReviewState
 import time
 import json
 import os
+import re
 from typing import Dict, List, Any, Literal, Optional, Union
 from config import USE_LOCAL_LLM, LOCAL_LLM_MODEL, LOCAL_LLM_API_TYPE
 from agents.coder_agent import CoderAgent
@@ -12,14 +13,16 @@ from local_llm_client import LocalLLMLangChain
 class MultiIterationReviewOrchestrator:
     """Orchestrates the code review process across multiple PR iterations."""
     
-    def __init__(self, use_local_llm: bool = False):
+    def __init__(self, use_local_llm: bool = False, auto_post_comments: bool = True):
         """Initialize the orchestrator with Azure DevOps client and LangGraph.
         
         Args:
             use_local_llm: Whether to use a local LLM instead of OpenAI
+            auto_post_comments: Whether to automatically post comments to the PR
         """
         self.azure_client = AzureDevOpsIterationClient()
         self.use_local_llm = use_local_llm or USE_LOCAL_LLM
+        self.auto_post_comments = auto_post_comments
         
         # Create agents with appropriate LLM setting
         self.coder_agent = CoderAgent(use_local_llm=self.use_local_llm)
@@ -28,7 +31,7 @@ class MultiIterationReviewOrchestrator:
         # Create LangGraph with appropriate LLM setting
         self.pr_review_graph = create_pr_review_graph(use_local_llm=self.use_local_llm)
         
-    def review_pull_request(self, pull_request_id, output_dir="reviews", iteration_id=None, latest_only=False, include_checklist=False, include_java_checklist=False):
+    def review_pull_request(self, pull_request_id, output_dir="reviews", iteration_id=None, latest_only=False, include_checklist=False, include_java_checklist=False, post_comments=None):
         """
         Review a pull request using the LangGraph-based agent workflow.
         Optionally include a PR review checklist and/or Java checklist in the summary review.
@@ -69,10 +72,13 @@ class MultiIterationReviewOrchestrator:
         # Process each iteration
         for iteration in iterations:
             print(f"Processing iteration {iteration.id}")
+            # Determine whether to post comments for this iteration
+            should_post_comments = self.auto_post_comments if post_comments is None else post_comments
             iteration_result = self._review_iteration(
                 pull_request_id, iteration.id, pr, output_dir,
                 include_checklist=include_checklist,
-                include_java_checklist=include_java_checklist
+                include_java_checklist=include_java_checklist,
+                post_comments=should_post_comments
             )
             all_iteration_results.append(iteration_result)
         
@@ -93,7 +99,7 @@ class MultiIterationReviewOrchestrator:
         else:
             return {"error": "No iterations were reviewed"}
     
-    def _review_iteration(self, pull_request_id, iteration_id, pr, output_dir, include_checklist=False, include_java_checklist=False):
+    def _review_iteration(self, pull_request_id, iteration_id, pr, output_dir, include_checklist=False, include_java_checklist=False, post_comments=True):
         """Review a specific iteration of a pull request."""
         # Get files changed in this iteration
         files = self.azure_client.get_iteration_file_changes(pull_request_id, iteration_id)
@@ -294,3 +300,75 @@ class MultiIterationReviewOrchestrator:
         """Sanitize a filename for use in the filesystem."""
         # Replace path separators and other problematic characters
         return filename.replace('/', '_').replace('\\', '_').replace(':', '_')
+        
+    def _post_file_review_comments(self, repository_id, pull_request_id, file_path, reviewer_analysis, iteration_id):
+        """Post review comments directly to the PR for a specific file.
+        
+        Args:
+            repository_id: The ID of the repository
+            pull_request_id: The ID of the pull request
+            file_path: Path to the file being reviewed
+            reviewer_analysis: Analysis from the reviewer agent
+            iteration_id: The ID of the iteration being reviewed
+        """
+        # Parse the reviewer analysis to extract issues and their locations
+        lines = reviewer_analysis.split('\n')
+        current_section = ""
+        issues = []
+        
+        # First, post a summary comment for the file
+        summary_content = f"# AI Code Review - Iteration {iteration_id}\n\n"
+        summary_content += f"Reviewing file: `{file_path}`\n\n"
+        summary_content += "## Summary of Issues\n"
+        
+        # Extract sections and issues
+        for line in lines:
+            if line.startswith("##"):
+                current_section = line.strip("# ")
+            elif line.startswith("- ") and current_section:
+                issue_text = line[2:]
+                # Try to extract line numbers using regex
+                line_match = re.search(r'line[s]?\s*(\d+)(?:\s*-\s*(\d+))?', issue_text, re.IGNORECASE)
+                line_number = int(line_match.group(1)) if line_match else 1
+                
+                issues.append({
+                    "section": current_section,
+                    "text": issue_text,
+                    "line": line_number
+                })
+                
+                # Add to summary
+                summary_content += f"- **{current_section}**: {issue_text}\n"
+        
+        # Post the summary comment
+        try:
+            self.azure_client.add_pull_request_thread(
+                repository_id=repository_id,
+                pull_request_id=pull_request_id,
+                content=summary_content,
+                file_path=file_path
+            )
+            print(f"Posted summary comment for {file_path}")
+        except Exception as e:
+            print(f"Error posting summary comment: {str(e)}")
+        
+        # Post individual issues as comments on specific lines
+        for issue in issues:
+            try:
+                # Create the comment content
+                content = f"**{issue['section']}**: {issue['text']}\n\n"
+                content += f"*AI Code Review - Iteration {iteration_id}*"
+                
+                # Post the comment
+                self.azure_client.add_pull_request_thread(
+                    repository_id=repository_id,
+                    pull_request_id=pull_request_id,
+                    content=content,
+                    file_path=file_path,
+                    line_number=issue['line']
+                )
+                
+                print(f"Posted comment for issue: {issue['section']} at line {issue['line']}")
+                
+            except Exception as e:
+                print(f"Error posting comment for issue: {str(e)}")

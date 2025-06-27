@@ -2,6 +2,7 @@ from azure.devops.connection import Connection
 from msrest.authentication import BasicAuthentication
 from config import AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT
 import base64
+from typing import Dict, List, Any, Optional, Union
 
 class AzureDevOpsIterationClient:
     """Client for working with Azure DevOps PR iterations."""
@@ -13,6 +14,8 @@ class AzureDevOpsIterationClient:
         self.connection = Connection(base_url=organization_url, creds=credentials)
         self.git_client = self.connection.clients.get_git_client()
         self.project = AZURE_DEVOPS_PROJECT
+        # Cache for thread IDs to avoid creating duplicates
+        self.thread_cache = {}
 
     def get_pull_request(self, pull_request_id):
         """Get pull request details by ID."""
@@ -125,3 +128,138 @@ class AzureDevOpsIterationClient:
                     print(f"Error getting content for {change.item.path}: {str(e)}")
         
         return files
+        
+    def add_pull_request_thread(self, repository_id, pull_request_id, content, file_path=None, line_number=None, status="active"):
+        """Add a thread comment to a pull request.
+        
+        Args:
+            repository_id: The ID of the repository
+            pull_request_id: The ID of the pull request
+            content: The content of the comment
+            file_path: Optional path to the file to comment on
+            line_number: Optional line number to comment on
+            status: Thread status (active, fixed, etc.)
+            
+        Returns:
+            The created thread
+        """
+        # Create thread comment parameters
+        thread = {
+            "comments": [{
+                "content": content,
+                "parentCommentId": 0,
+                "commentType": 1  # Code Comment
+            }],
+            "status": status
+        }
+        
+        # Add file-specific information if provided
+        if file_path:
+            thread["threadContext"] = {
+                "filePath": file_path
+            }
+            
+            # Add line number if provided
+            if line_number is not None:
+                thread["threadContext"]["rightFileStart"] = {
+                    "line": line_number,
+                    "offset": 1
+                }
+                thread["threadContext"]["rightFileEnd"] = {
+                    "line": line_number,
+                    "offset": 1
+                }
+        
+        # Create the thread
+        created_thread = self.git_client.create_thread(
+            comment_thread=thread,
+            repository_id=repository_id,
+            pull_request_id=pull_request_id,
+            project=self.project
+        )
+        
+        # Cache the thread ID with a key that includes the file path and content
+        cache_key = f"{file_path}:{content[:50]}"
+        self.thread_cache[cache_key] = created_thread.id
+        
+        return created_thread
+    
+    def update_thread_status(self, repository_id, pull_request_id, thread_id, status="fixed"):
+        """Update the status of a thread.
+        
+        Args:
+            repository_id: The ID of the repository
+            pull_request_id: The ID of the pull request
+            thread_id: The ID of the thread to update
+            status: New status (active, fixed, etc.)
+            
+        Returns:
+            The updated thread
+        """
+        # Get the existing thread
+        thread = self.git_client.get_pull_request_thread(
+            repository_id=repository_id,
+            pull_request_id=pull_request_id,
+            thread_id=thread_id,
+            project=self.project
+        )
+        
+        # Update the status
+        thread.status = status
+        
+        # Update the thread
+        updated_thread = self.git_client.update_thread(
+            comment_thread=thread,
+            repository_id=repository_id,
+            pull_request_id=pull_request_id,
+            thread_id=thread_id,
+            project=self.project
+        )
+        
+        return updated_thread
+    
+    def add_thread_comment(self, repository_id, pull_request_id, thread_id, content):
+        """Add a comment to an existing thread.
+        
+        Args:
+            repository_id: The ID of the repository
+            pull_request_id: The ID of the pull request
+            thread_id: The ID of the thread to comment on
+            content: The content of the comment
+            
+        Returns:
+            The created comment
+        """
+        # Create the comment
+        comment = {
+            "content": content,
+            "parentCommentId": 0,
+            "commentType": 1  # Code Comment
+        }
+        
+        # Add the comment to the thread
+        created_comment = self.git_client.create_comment(
+            comment=comment,
+            repository_id=repository_id,
+            pull_request_id=pull_request_id,
+            thread_id=thread_id,
+            project=self.project
+        )
+        
+        return created_comment
+    
+    def get_pull_request_threads(self, repository_id, pull_request_id):
+        """Get all threads for a pull request.
+        
+        Args:
+            repository_id: The ID of the repository
+            pull_request_id: The ID of the pull request
+            
+        Returns:
+            List of threads
+        """
+        return self.git_client.get_threads(
+            repository_id=repository_id,
+            pull_request_id=pull_request_id,
+            project=self.project
+        )

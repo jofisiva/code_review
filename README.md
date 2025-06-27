@@ -15,7 +15,12 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
 - **Azure DevOps Integration**:
   - Fetches pull request details and changed files
   - Supports multiple iterations of pull requests
-  - Optionally posts review comments directly to the pull request
+  - **Enhanced PR Comment Integration**:
+    - Posts summary comments for each file review iteration
+    - Posts individual issue comments on specific code lines
+    - Updates existing threads rather than creating duplicates
+    - Automatically marks threads as "fixed" when issues are resolved
+    - Adds confirmation comments when issues are fixed
 
 - **Comparison View**:
   - Side-by-side comparison of code changes and AI analyses
@@ -157,6 +162,66 @@ The system also provides API endpoints for integration with other tools:
 - `GET /api/review/<review_id>`: Get a specific review
 - `GET /api/iterations`: Get iterations for a pull request
 - `GET /api/improvement_details`: Get details of iterative improvements for a file
+
+## PR Comment Integration
+
+The system features a sophisticated PR comment integration that automatically posts and updates detailed code review comments directly on Azure DevOps pull requests:
+
+### Key Features
+
+- **Summary and Line-Specific Comments**:
+  - Posts a summary comment for each file review iteration
+  - Posts individual issue comments on specific code lines referenced in the review
+  - Enhances developer awareness by highlighting issues directly in the PR context
+
+- **Smart Thread Management**:
+  - Checks for existing threads before creating new ones to avoid duplicates
+  - Updates existing threads with new comments when issues persist across iterations
+  - Automatically marks threads as "fixed" when issues are resolved
+  - Adds confirmation comments when issues are fixed
+
+- **Iterative Improvement Integration**:
+  - Tracks issue resolution across improvement iterations
+  - Updates thread statuses as the Coder Agent applies fixes
+  - Provides a complete audit trail of issues and resolutions
+
+### How to Enable PR Comment Posting
+
+1. **Via Web Interface**:
+   - When starting a review, check the "Post summary comments to PR" option
+   - For detailed line comments, also check "Automatically post detailed comments on specific lines"
+
+2. **Via API/Programmatic Use**:
+   ```python
+   orchestrator = MultiIterationReviewOrchestrator(
+       pull_request_id=pr_id,
+       post_comments=True,         # Enable summary comments
+       auto_post_comments=True     # Enable detailed line comments
+   )
+   ```
+
+3. **For Iterative Improvements**:
+   ```python
+   improvement_loop = IterativeImprovementLoop(use_local_llm=False)
+   result = improvement_loop.improve_code(
+       pull_request_id=pr_id,
+       file_path=file_path,
+       old_content=old_content,
+       new_content=new_content,
+       post_comments=True          # Enable PR comment posting
+   )
+   ```
+
+### How It Works
+
+1. The system analyzes code using the Reviewer Agent
+2. It parses the reviewer analysis to extract issues and their line numbers
+3. It posts a summary comment for the entire file review
+4. It posts individual issue comments on specific code lines
+5. During iterative improvements, it tracks which issues are resolved
+6. It updates thread statuses and adds confirmation comments when issues are fixed
+
+This feature significantly enhances developer awareness by bringing AI-generated code review feedback directly into the PR workflow, eliminating the need to switch between tools.
 
 ## Local LLM Support
 

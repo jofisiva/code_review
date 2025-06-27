@@ -28,9 +28,10 @@ class MultiIterationReviewOrchestrator:
         # Create LangGraph with appropriate LLM setting
         self.pr_review_graph = create_pr_review_graph(use_local_llm=self.use_local_llm)
         
-    def review_pull_request(self, pull_request_id, output_dir="reviews", iteration_id=None, latest_only=False):
+    def review_pull_request(self, pull_request_id, output_dir="reviews", iteration_id=None, latest_only=False, include_checklist=False, include_java_checklist=False):
         """
         Review a pull request using the LangGraph-based agent workflow.
+        Optionally include a PR review checklist and/or Java checklist in the summary review.
         
         Args:
             pull_request_id: The ID of the pull request to review
@@ -68,7 +69,11 @@ class MultiIterationReviewOrchestrator:
         # Process each iteration
         for iteration in iterations:
             print(f"Processing iteration {iteration.id}")
-            iteration_result = self._review_iteration(pull_request_id, iteration.id, pr, output_dir)
+            iteration_result = self._review_iteration(
+                pull_request_id, iteration.id, pr, output_dir,
+                include_checklist=include_checklist,
+                include_java_checklist=include_java_checklist
+            )
             all_iteration_results.append(iteration_result)
         
         # Generate a cross-iteration summary if we have multiple iterations
@@ -88,7 +93,7 @@ class MultiIterationReviewOrchestrator:
         else:
             return {"error": "No iterations were reviewed"}
     
-    def _review_iteration(self, pull_request_id, iteration_id, pr, output_dir):
+    def _review_iteration(self, pull_request_id, iteration_id, pr, output_dir, include_checklist=False, include_java_checklist=False):
         """Review a specific iteration of a pull request."""
         # Get files changed in this iteration
         files = self.azure_client.get_iteration_file_changes(pull_request_id, iteration_id)
@@ -132,8 +137,14 @@ class MultiIterationReviewOrchestrator:
             "source_branch": final_state["source_branch"],
             "target_branch": final_state["target_branch"],
             "files": final_state["files"],
-            "summary_review": final_state["summary_review"]
         }
+        # Generate the summary review with checklist options
+        review_results["summary_review"] = self.reviewer_agent.provide_summary_review(
+            all_file_reviews=final_state["files"],
+            include_checklist=include_checklist,
+            include_java_checklist=include_java_checklist
+        )
+
         
         # Save individual file reviews
         for file_info in review_results["files"]:

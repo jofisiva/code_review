@@ -1,5 +1,6 @@
 from agents.base_agent import BaseAgent
 from config import OPENAI_MODEL_REVIEWER, USE_LOCAL_LLM
+from pr_review_checklist import format_checklist_markdown
 
 class ReviewerAgent(BaseAgent):
     """Agent that acts as a code reviewer, providing feedback on code changes."""
@@ -25,8 +26,12 @@ class ReviewerAgent(BaseAgent):
         """
     
     def review_file_changes(self, file_path, old_content, new_content, coder_explanation=None):
-        """Review changes between old and new versions of a file."""
+        """Review changes between old and new versions of a file. Adds Java-specific prompt for .java files."""
+        language_hint = ""
+        if file_path.lower().endswith(".java"):
+            language_hint = "This file is Java source code. Please review according to Java best practices, common pitfalls, and conventions.\n"
         prompt = f"""
+        {language_hint}
         I need you to review the changes made to the file: {file_path}
         
         OLD VERSION:
@@ -51,11 +56,13 @@ class ReviewerAgent(BaseAgent):
         
         Format your review as markdown with sections for different categories of feedback.
         """
-        
         return self.generate_response(prompt, self.system_message, temperature=0.4, max_tokens=2500)
     
-    def provide_summary_review(self, all_file_reviews):
-        """Provide an overall summary review of all file changes."""
+    def provide_summary_review(self, all_file_reviews, include_checklist=False, include_java_checklist=False):
+        """Provide an overall summary review of all file changes.
+        Optionally include a PR review checklist and/or a Java checklist if requested.
+        """
+        from pr_review_checklist import format_checklist_markdown, format_java_checklist_markdown
         prompt = f"""
         I need you to provide an overall summary review of a pull request based on the individual file reviews.
         
@@ -72,5 +79,18 @@ class ReviewerAgent(BaseAgent):
         
         Format your summary as markdown.
         """
-        
-        return self.generate_response(prompt, self.system_message, temperature=0.4)
+        summary = self.generate_response(prompt, self.system_message, temperature=0.4)
+        if include_checklist:
+            checklist_md = format_checklist_markdown()
+            summary += "\n\n---\n**PR Review Checklist:**\n" + checklist_md
+        # Optionally include Java checklist if requested and any file is Java
+        if include_java_checklist:
+            # Try to detect Java files from all_file_reviews text or list
+            java_detected = False
+            if isinstance(all_file_reviews, list):
+                java_detected = any(f.get('path', '').lower().endswith('.java') for f in all_file_reviews)
+            elif isinstance(all_file_reviews, str):
+                java_detected = '.java' in all_file_reviews.lower()
+            if java_detected:
+                summary += "\n\n---\n**Java Review Checklist:**\n" + format_java_checklist_markdown()
+        return summary

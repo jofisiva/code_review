@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Review for PR #{{ review.pull_request_id }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">{{ review.title }}</h5>
+    </div>
+    <div class="container mt-4">
+        <h1>Review Details</h1>
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2>PR #{{ review.pull_request_id }}: {{ review.title }}</h2>
+                {% if review.iteration_id is defined %}
+                <span class="badge bg-info">Iteration {{ review.iteration_id }}</span>
+                {% endif %}
+                {% if review.iterations is defined %}
+                <span class="badge bg-primary">{{ review.iterations|length }} Iterations Analyzed</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <p><strong>Repository:</strong> {{ review.repository }}</p>
+                <p><strong>Source Branch:</strong> {{ review.source_branch }}</p>
+                <p><strong>Target Branch:</strong> {{ review.target_branch }}</p>
+                <p><strong>Created By:</strong> {{ review.created_by }}</p>
+                {% if review.iterations is defined %}
+                <p><strong>Iterations Analyzed:</strong> {{ review.iterations|join(', ') }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <ul class="nav nav-tabs" id="reviewTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary" type="button" role="tab" aria-controls="summary" aria-selected="true">Summary</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#files" type="button" role="tab" aria-controls="files" aria-selected="false">Changed Files</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="reviewTabsContent">
+            <div class="tab-pane fade show active" id="summary" role="tabpanel" aria-labelledby="summary-tab">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        {% if review.cross_iteration_analysis is defined %}
+                        <h3>Cross-Iteration Analysis</h3>
+                        {% else %}
+                        <h3>Summary Review</h3>
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        {% if review.cross_iteration_analysis is defined %}
+                        {{ review.cross_iteration_analysis|markdown|safe }}
+                        {% else %}
+                        {{ review.summary_review|markdown|safe }}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                {% if review.iterations is defined and review.iterations|length > 1 %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3>Iteration Timeline</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="timeline">
+                            {% for iteration_id in review.iterations %}
+                            <div class="timeline-item">
+                                <div class="timeline-marker">{{ iteration_id }}</div>
+                                <div class="timeline-content">
+                                    <h5>Iteration {{ iteration_id }}</h5>
+                                    <p>Click to view details for this iteration</p>
+                                    <a href="{{ url_for('view_review', review_id='iteration_review_' + review.pull_request_id|string + '_' + iteration_id|string) }}" class="btn btn-sm btn-outline-primary">View Details</a>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="tab-pane fade" id="files" role="tabpanel" aria-labelledby="files-tab">
+                <div class="mt-4">
+                    <h5>Changed Files</h5>
+                    <div class="list-group">
+                        {% for file in review.files %}
+                        <a href="{{ url_for('view_file_review', review_id=review.pull_request_id, file_path=file.path) }}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <span class="file-path">{{ file.path }}</span>
+                                <span class="badge {% if file.change_type == 'add' %}bg-success{% elif file.change_type == 'edit' %}bg-primary{% else %}bg-secondary{% endif %}">
+                                    {{ file.change_type|capitalize }}
+                                </span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .diff-container {
+        font-family: monospace;
+        white-space: pre;
+        overflow-x: auto;
+    }
+    .diff-line {
+        display: flex;
+    }
+    .diff-line-number {
+        width: 40px;
+        text-align: right;
+        padding-right: 10px;
+        color: #999;
+        user-select: none;
+    }
+    .diff-line-content {
+        flex: 1;
+    }
+    .diff-added {
+        background-color: #e6ffed;
+    }
+    .diff-removed {
+        background-color: #ffeef0;
+    }
+    
+    /* Timeline styles */
+    .timeline {
+        position: relative;
+        padding: 20px 0;
+    }
+    .timeline:before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 20px;
+        width: 4px;
+        background: #ddd;
+    }
+    .timeline-item {
+        position: relative;
+        margin-bottom: 30px;
+        padding-left: 60px;
+    }
+    .timeline-marker {
+        position: absolute;
+        left: 10px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #007bff;
+        color: white;
+        text-align: center;
+        line-height: 24px;
+        font-weight: bold;
+    }
+    .timeline-content {
+        padding: 15px;
+        border-radius: 5px;
+        background: #f8f9fa;
+        border-left: 3px solid #007bff;
+    }
+</style>
+{% endblock %}

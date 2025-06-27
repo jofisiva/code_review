@@ -1,0 +1,280 @@
+{% extends 'base.html' %}
+
+{% block title %}Iterative Code Improvement Results{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Iterative Code Improvement Results</h1>
+    
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Pull Request #{{ improvement_results.pull_request_id }}: {{ improvement_results.title }}</h5>
+                <span class="badge bg-light text-dark">{{ improvement_results.repository }}</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <p><strong>Files Processed:</strong> {{ improvement_results.files_processed }}</p>
+                    <p><strong>Timestamp:</strong> {{ improvement_results.timestamp }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">Improvement Summary</h5>
+        </div>
+        <div class="card-body">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Iterations</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file_result in improvement_results.file_results %}
+                    <tr>
+                        <td>{{ file_result.file_path }}</td>
+                        <td>{{ file_result.iterations_completed }}</td>
+                        <td>
+                            {% if file_result.error %}
+                                <span class="badge bg-danger">Error</span>
+                            {% elif file_result.all_issues_resolved %}
+                                <span class="badge bg-success">All Issues Resolved</span>
+                            {% else %}
+                                <span class="badge bg-warning">Issues Remain</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not file_result.error %}
+                                <button class="btn btn-sm btn-primary view-details" 
+                                        data-file="{{ file_result.file_path }}"
+                                        data-pr="{{ improvement_results.pull_request_id }}">
+                                    View Details
+                                </button>
+                            {% else %}
+                                <span class="text-danger">{{ file_result.error }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Modal for file improvement details -->
+    <div class="modal fade" id="fileImprovementModal" tabindex="-1" aria-labelledby="fileImprovementModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="fileImprovementModalLabel">File Improvement Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="fileImprovementModalBody">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-4">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Home</a>
+        <a href="{{ url_for('view_review', review_id=improvement_results.pull_request_id) }}" class="btn btn-primary">View Full Review</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Handle view details button click
+        $('.view-details').click(function() {
+            const filePath = $(this).data('file');
+            const prId = $(this).data('pr');
+            
+            // Show modal
+            const modal = $('#fileImprovementModal');
+            modal.find('.modal-title').text('Improvement Details: ' + filePath);
+            modal.modal('show');
+            
+            // Load file improvement details
+            $.ajax({
+                url: '/api/improvement_details',
+                type: 'GET',
+                data: {
+                    pr_id: prId,
+                    file_path: filePath
+                },
+                success: function(data) {
+                    let modalContent = '';
+                    
+                    // Add iteration tabs
+                    modalContent += '<ul class="nav nav-tabs" id="iterationTabs" role="tablist">';
+                    for (let i = 0; i < data.iterations.length; i++) {
+                        const active = i === 0 ? 'active' : '';
+                        modalContent += `
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link ${active}" id="iteration-${i+1}-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#iteration-${i+1}" type="button" role="tab" 
+                                        aria-controls="iteration-${i+1}" aria-selected="${i === 0}">
+                                    Iteration ${i+1}
+                                </button>
+                            </li>
+                        `;
+                    }
+                    modalContent += '</ul>';
+                    
+                    // Add tab content
+                    modalContent += '<div class="tab-content mt-3" id="iterationTabsContent">';
+                    for (let i = 0; i < data.iterations.length; i++) {
+                        const iteration = data.iterations[i];
+                        const active = i === 0 ? 'show active' : '';
+                        
+                        modalContent += `
+                            <div class="tab-pane fade ${active}" id="iteration-${i+1}" role="tabpanel" aria-labelledby="iteration-${i+1}-tab">
+                                <div class="card mb-3">
+                                    <div class="card-header bg-info text-white">
+                                        <h5>Reviewer Analysis</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="reviewer-analysis">${marked(iteration.reviewer_analysis)}</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="card mb-3">
+                                    <div class="card-header bg-success text-white">
+                                        <h5>Code Improvements</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="accordion" id="suggestionsAccordion${i+1}">
+                        `;
+                        
+                        // Add suggestions
+                        for (let j = 0; j < iteration.suggestions.length; j++) {
+                            modalContent += `
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="suggestion-${i+1}-${j+1}-heading">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                                data-bs-target="#suggestion-${i+1}-${j+1}-collapse" aria-expanded="false" 
+                                                aria-controls="suggestion-${i+1}-${j+1}-collapse">
+                                            Suggestion ${j+1}
+                                        </button>
+                                    </h2>
+                                    <div id="suggestion-${i+1}-${j+1}-collapse" class="accordion-collapse collapse" 
+                                         aria-labelledby="suggestion-${i+1}-${j+1}-heading" data-bs-parent="#suggestionsAccordion${i+1}">
+                                        <div class="accordion-body">
+                                            <pre><code class="language-${getLanguageFromFilePath(filePath)}">${escapeHtml(iteration.suggestions[j])}</code></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        modalContent += `
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="card">
+                                    <div class="card-header bg-primary text-white">
+                                        <h5>Code Diff</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="diff-${i+1}" class="diff-container"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    modalContent += '</div>';
+                    
+                    // Update modal content
+                    $('#fileImprovementModalBody').html(modalContent);
+                    
+                    // Initialize syntax highlighting
+                    document.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                    
+                    // Initialize diffs
+                    for (let i = 0; i < data.iterations.length; i++) {
+                        const iteration = data.iterations[i];
+                        const diff = Diff.createTwoFilesPatch(
+                            filePath + ' (Before)',
+                            filePath + ' (After)',
+                            iteration.original_content,
+                            iteration.improved_content
+                        );
+                        
+                        const diffHtml = Diff2Html.html(diff, {
+                            drawFileList: false,
+                            matching: 'lines',
+                            outputFormat: 'side-by-side'
+                        });
+                        
+                        $(`#diff-${i+1}`).html(diffHtml);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#fileImprovementModalBody').html(`
+                        <div class="alert alert-danger">
+                            Error loading improvement details: ${error}
+                        </div>
+                    `);
+                }
+            });
+        });
+        
+        // Helper function to get language from file path
+        function getLanguageFromFilePath(filePath) {
+            const extension = filePath.split('.').pop().toLowerCase();
+            const languageMap = {
+                'py': 'python',
+                'js': 'javascript',
+                'ts': 'typescript',
+                'html': 'html',
+                'css': 'css',
+                'json': 'json',
+                'md': 'markdown',
+                'java': 'java',
+                'cs': 'csharp',
+                'cpp': 'cpp',
+                'c': 'c',
+                'go': 'go',
+                'rb': 'ruby',
+                'php': 'php',
+                'sh': 'bash',
+                'yml': 'yaml',
+                'yaml': 'yaml',
+                'xml': 'xml'
+            };
+            
+            return languageMap[extension] || 'plaintext';
+        }
+        
+        // Helper function to escape HTML
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    });
+</script>
+{% endblock %}

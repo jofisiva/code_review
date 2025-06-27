@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}File Review: {{ file_data.path }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            <span class="file-path">{{ file_data.path }}</span>
+        </h5>
+        <a href="{{ url_for('view_review', review_id=review_id) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Review
+        </a>
+    </div>
+    <div class="card-body">
+        <ul class="nav nav-tabs" id="fileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="diff-tab" data-bs-toggle="tab" data-bs-target="#diff" type="button" role="tab" aria-controls="diff" aria-selected="true">Code Diff</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="coder-tab" data-bs-toggle="tab" data-bs-target="#coder" type="button" role="tab" aria-controls="coder" aria-selected="false">Coder Analysis</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="reviewer-tab" data-bs-toggle="tab" data-bs-target="#reviewer" type="button" role="tab" aria-controls="reviewer" aria-selected="false">Reviewer Analysis</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="comparison-tab" data-bs-toggle="tab" data-bs-target="#comparison" type="button" role="tab" aria-controls="comparison" aria-selected="false">Side-by-Side Comparison</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="fileTabsContent">
+            <div class="tab-pane fade show active" id="diff" role="tabpanel" aria-labelledby="diff-tab">
+                <div class="mt-4">
+                    <h5>Code Changes</h5>
+                    <div class="diff-container">
+                        {{ diff_html|safe }}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-pane fade" id="coder" role="tabpanel" aria-labelledby="coder-tab">
+                <div class="mt-4">
+                    <h5>Coder Agent Analysis</h5>
+                    <div class="card">
+                        <div class="card-body agent-section coder-section">
+                            {{ coder_analysis_html|safe }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-pane fade" id="reviewer" role="tabpanel" aria-labelledby="reviewer-tab">
+                <div class="mt-4">
+                    <h5>Reviewer Agent Analysis</h5>
+                    <div class="card">
+                        <div class="card-body agent-section reviewer-section">
+                            {{ reviewer_analysis_html|safe }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-pane fade" id="comparison" role="tabpanel" aria-labelledby="comparison-tab">
+                <div class="mt-4">
+                    <h5>Side-by-Side Comparison with AI Analysis</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Code Changes</h6>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="diff-container" style="max-height: 500px; overflow-y: auto;">
+                                        {{ diff_html|safe }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-code me-2"></i>Coder Analysis</h6>
+                                </div>
+                                <div class="card-body agent-section coder-section" style="max-height: 200px; overflow-y: auto;">
+                                    {{ coder_analysis_html|safe }}
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-search-plus me-2"></i>Reviewer Analysis</h6>
+                                </div>
+                                <div class="card-body agent-section reviewer-section" style="max-height: 280px; overflow-y: auto;">
+                                    {{ reviewer_analysis_html|safe }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Ensure proper tab activation
+    document.addEventListener('DOMContentLoaded', function() {
+        var hash = window.location.hash;
+        if (hash) {
+            var tab = document.querySelector(`a[href="${hash}"]`);
+            if (tab) {
+                tab.click();
+            }
+        }
+    });
+</script>
+{% endblock %}

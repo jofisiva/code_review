@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}AI Code Review System - Home{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Start New Code Review</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('start_review') }}" method="post">
+                    <div class="mb-3">
+                        <label for="pr_id" class="form-label">Azure DevOps Pull Request ID</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="pr_id" name="pr_id" required>
+                            <button class="btn btn-outline-secondary" type="button" id="fetch-iterations">Fetch Iterations</button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="iterations-container" style="display: none;">
+                        <label for="review_iterations" class="form-label">Review Iterations</label>
+                        <select class="form-select" id="review_iterations" name="review_iterations">
+                            <option value="latest" selected>Latest iteration only</option>
+                            <option value="multiple">All iterations</option>
+                            <option value="specific">Specific iteration</option>
+                        </select>
+                        
+                        <div id="specific-iteration-container" class="mt-2" style="display: none;">
+                            <label for="iteration_id" class="form-label">Select Iteration</label>
+                            <select class="form-select" id="iteration_id" name="iteration_id">
+                                <!-- Will be populated via JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" value="yes" id="post_comments" name="post_comments">
+                        <label class="form-check-label" for="post_comments">
+                            Post comments to Azure DevOps
+                        </label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" value="yes" id="run_improvement" name="run_improvement">
+                        <label class="form-check-label" for="run_improvement">
+                            Run iterative improvement loop (Reviewer suggestions → Coder fixes)
+                        </label>
+                    </div>
+                    <div class="form-group mb-3" id="improvement_options" style="display: none;">
+                        <label for="max_iterations">Maximum improvement iterations:</label>
+                        <input type="number" class="form-control" id="max_iterations" name="max_iterations" value="3" min="1" max="10">
+                        <small class="form-text text-muted">Maximum number of improvement cycles to run</small>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_langgraph" name="use_langgraph" value="yes" checked>
+                        <label class="form-check-label" for="use_langgraph">Use LangGraph multi-agent workflow</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-play me-2"></i>Start Review
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Reviews</h5>
+                <button class="btn btn-sm btn-outline-secondary" id="refresh-reviews">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                {% if reviews %}
+                    <div class="list-group">
+                        {% for review in reviews %}
+                            <a href="{{ url_for('view_review', review_id=review.id) }}" class="list-group-item list-group-item-action">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">{{ review.title }}</h6>
+                                    <small>PR #{{ review.id }}</small>
+                                </div>
+                                <p class="mb-1">Repository: {{ review.repository }}</p>
+                                <small>Created by: {{ review.created_by }} | {{ review.file_count }} files</small>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No reviews found. Start a new review to see results here.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">About AI Code Review System</h5>
+            </div>
+            <div class="card-body">
+                <p>This system uses multiple AI agents to perform comprehensive code reviews on Azure DevOps pull requests:</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="agent-section coder-section">
+                            <h5><i class="fas fa-code me-2"></i>Coder Agent</h5>
+                            <p>Analyzes code changes to understand and explain the purpose and functionality of the changes. The Coder agent provides context about why changes were made and identifies potential issues.</p>
+                        </div>
+                        <div class="agent-section" style="border-color: #6f42c1;">
+                            <h5><i class="fas fa-history me-2"></i>Iteration Analyzer</h5>
+                            <p>Analyzes changes across multiple iterations of a pull request, tracking how code evolves in response to feedback and identifying recurring issues or improvements.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="agent-section reviewer-section">
+                            <h5><i class="fas fa-search-plus me-2"></i>Reviewer Agent</h5>
+                            <p>Reviews code changes critically, identifying bugs, security issues, and performance problems. The Reviewer agent suggests improvements to code quality, readability, and maintainability.</p>
+                        </div>
+                    </div>
+                </div>
+                <p class="mt-3">The system integrates with Azure DevOps to fetch pull request details and can optionally post review comments directly to the pull request.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Fetch iterations for a PR
+    document.getElementById('fetch-iterations').addEventListener('click', function() {
+        const prId = document.getElementById('pr_id').value;
+        if (!prId) {
+            alert('Please enter a Pull Request ID first');
+            return;
+        }
+        
+        // Show loading state
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+        this.disabled = true;
+        
+        // Fetch iterations
+        fetch(`{{ url_for('index') }}?get_iterations_for=${prId}`)
+            .then(response => response.text())
+            .then(html => {
+                // Parse the HTML response
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Extract iterations from the response
+                const iterations = [];
+                const flashMessages = doc.querySelectorAll('.alert');
+                
+                // Check for error messages
+                let hasError = false;
+                flashMessages.forEach(message => {
+                    if (message.classList.contains('alert-danger')) {
+                        alert(message.textContent.trim());
+                        hasError = true;
+                    }
+                });
+                
+                if (!hasError) {
+                    // Show the iterations container
+                    document.getElementById('iterations-container').style.display = 'block';
+                    
+                    // Populate iterations if available
+                    const iterationSelect = document.getElementById('iteration_id');
+                    iterationSelect.innerHTML = '';
+                    
+                    // Add iterations from the response (this is a simplified approach)
+                    // In a real implementation, you would extract the iterations from the response
+                    // For now, we'll add some dummy iterations
+                    for (let i = 1; i <= 5; i++) {
+                        const option = document.createElement('option');
+                        option.value = i;
+                        option.textContent = `Iteration ${i}`;
+                        iterationSelect.appendChild(option);
+                    }
+                }
+                
+                // Reset button state
+                this.innerHTML = 'Fetch Iterations';
+                this.disabled = false;
+            })
+            .catch(error => {
+                alert('Error fetching iterations: ' + error);
+                this.innerHTML = 'Fetch Iterations';
+                this.disabled = false;
+            });
+    });
+    
+    // Show/hide specific iteration selector based on selection
+    document.getElementById('review_iterations').addEventListener('change', function() {
+        const specificContainer = document.getElementById('specific-iteration-container');
+        if (this.value === 'specific') {
+            specificContainer.style.display = 'block';
+        } else {
+            specificContainer.style.display = 'none';
+        }
+        
+        // Show/hide iteration selection based on review_iterations value
+        $("#review_iterations").change(function() {
+            if ($(this).val() === "specific") {
+                $("#iteration_selection").show();
+            } else {
+                $("#iteration_selection").hide();
+            }
+        });
+        
+        // Show/hide improvement options when checkbox is checked
+        $("#run_improvement").change(function() {
+            if ($(this).is(":checked")) {
+                $("#improvement_options").show();
+            } else {
+                $("#improvement_options").hide();
+            }
+        });
+    });
+    
+    // Refresh reviews
+    document.getElementById('refresh-reviews').addEventListener('click', function() {
+        fetch('{{ url_for("api_list_reviews") }}')
+            .then(response => response.json())
+            .then(data => {
+                const listGroup = document.querySelector('.list-group');
+                if (data.length > 0) {
+                    let html = '';
+                    data.forEach(review => {
+                        html += `
+                            <a href="/review/${review.id}" class="list-group-item list-group-item-action">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">${review.title}</h6>
+                                    <small>PR #${review.id}</small>
+                                </div>
+                                <p class="mb-1">Repository: ${review.repository}</p>
+                                <small>Created by: ${review.created_by} | ${review.file_count} files</small>
+                            </a>
+                        `;
+                    });
+                    listGroup.innerHTML = html;
+                } else {
+                    listGroup.innerHTML = '<p class="text-muted">No reviews found. Start a new review to see results here.</p>';
+                }
+            });
+    });
+</script>
+{% endblock %}

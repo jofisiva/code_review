@@ -119,7 +119,7 @@ You can now optionally include detailed checklists in your PR review summaries:
 - `test_java_review_checklist.py`: Demonstrates checklist logic for Java code reviews.
 
 #### Extending for Other Languages
-- Add additional language-specific checklists to `pr_review_checklist.py`.
+- Add additional language-specific checklists to `utils/pr_review_checklist.py`.
 - Update `ReviewerAgent` to detect and append the relevant checklist for each language.
 
 ### Running the Web Application
@@ -223,6 +223,32 @@ The system features a sophisticated PR comment integration that automatically po
 
 This feature significantly enhances developer awareness by bringing AI-generated code review feedback directly into the PR workflow, eliminating the need to switch between tools.
 
+## Project Structure
+
+The codebase is organized into a modular package structure for better maintainability and separation of concerns:
+
+- **azure_devops/**: Azure DevOps integration
+  - `client.py`: Client for interacting with Azure DevOps API
+  - Handles PR data retrieval, comment posting, and thread management
+
+- **core/**: Core logic and orchestration
+  - `iterative_improvement_loop.py`: Implements the iterative feedback loop
+  - `multi_iteration_orchestrator.py`: Orchestrates multi-iteration PR reviews
+  - `langgraph_agents.py`: LangGraph agent definitions and workflow graphs
+
+- **agents/**: AI agent implementations
+  - `reviewer_agent.py`: Implements the code reviewer agent
+  - `coder_agent.py`: Implements the code explanation and improvement agent
+  - `base_agent.py`: Base class for all agents
+
+- **utils/**: Utility functions and helpers
+  - `config.py`: Configuration management
+  - `local_llm_client.py`: Client for local LLM integration
+  - `pr_review_checklist.py`: PR review checklists for different languages
+
+- **tests/**: Test files
+  - Contains unit tests and integration tests for all components
+
 ## Local LLM Support
 
 The system supports using local LLM models as an alternative to OpenAI's API:
@@ -245,8 +271,8 @@ The system supports using local LLM models as an alternative to OpenAI's API:
    - Start the system with local LLM enabled
 
 4. **Testing Local LLM**:
-   - Run `python test_ollama.py` to test basic connectivity
-   - Run `python test_code_review_with_ollama.py` to test the code review functionality
+   - Run `python -m tests.test_ollama` to test basic connectivity
+   - Run `python -m tests.test_code_review_with_ollama` to test the code review functionality
 
 ## Architecture
 

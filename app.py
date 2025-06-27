@@ -1,15 +1,26 @@
+"""
+Flask web application for the code review system.
+"""
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 import os
 import json
-from multi_iteration_orchestrator import MultiIterationReviewOrchestrator
-from azure_devops_iteration_client import AzureDevOpsIterationClient
-from iterative_improvement_loop import IterativeImprovementLoop, BatchImprovementProcessor
 import markdown
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, guess_lexer
 from pygments.formatters import HtmlFormatter
 import difflib
-from config import USE_LOCAL_LLM, LOCAL_LLM_MODEL, LOCAL_LLM_API_URL, LOCAL_LLM_API_TYPE
+
+from core.multi_iteration_orchestrator import MultiIterationReviewOrchestrator
+from azure_devops.client import AzureDevOpsIterationClient
+from core.iterative_improvement_loop import IterativeImprovementLoop, BatchImprovementProcessor
+from utils.config import get_config
+
+# Get configuration
+config = get_config()
+USE_LOCAL_LLM = config.get('USE_LOCAL_LLM', False)
+LOCAL_LLM_MODEL = config.get('LOCAL_LLM_MODEL', 'llama3')
+LOCAL_LLM_API_URL = config.get('LOCAL_LLM_API_URL', 'http://localhost:11434')
+LOCAL_LLM_API_TYPE = config.get('LOCAL_LLM_API_TYPE', 'ollama')
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -77,25 +88,30 @@ def start_review():
         use_local_llm = request.form.get('use_local_llm') == 'yes' or USE_LOCAL_LLM
         
         # Check if comments should be automatically posted to PR
+        post_comments = request.form.get('post_comments') == 'yes'
         auto_post_comments = request.form.get('auto_post_comments') == 'yes'
         
         if iteration_id:
             iteration_id = int(iteration_id)
         
         # Create the orchestrator
-        orchestrator = MultiIterationReviewOrchestrator(use_local_llm=use_local_llm, auto_post_comments=auto_post_comments)
+        orchestrator = MultiIterationReviewOrchestrator(
+            use_local_llm=use_local_llm, 
+            post_comments=post_comments,
+            auto_post_comments=auto_post_comments
+        )
         
         # Handle different review modes
         if review_iterations == 'specific' and iteration_id:
             flash(f'Reviewing specific iteration {iteration_id}', 'info')
             review_results = orchestrator.review_pull_request(int(pr_id), iteration_id=iteration_id)
-        elif review_iterations == 'multiple':
+        elif review_iterations == 'all':
             flash('Reviewing all iterations', 'info')
-            review_results = orchestrator.review_pull_request(int(pr_id))
+            review_results = orchestrator.review_pull_request(int(pr_id), review_all=True)
         else:
             # Default to latest iteration
             flash('Reviewing latest iteration', 'info')
-            review_results = orchestrator.review_pull_request(int(pr_id), latest_only=True)
+            review_results = orchestrator.review_pull_request(int(pr_id))
         
         # Run iterative improvement if requested
         run_improvement = request.form.get('run_improvement') == 'yes'
@@ -111,22 +127,18 @@ def start_review():
                 # Process the pull request for improvements
                 improvement_results = improvement_processor.process_pull_request(
                     pull_request_id=int(pr_id),
-                    max_iterations=max_iterations
+                    max_iterations=max_iterations,
+                    post_comments=post_comments
                 )
                 
                 # Save the improvement results ID for later reference
                 improvement_id = f"batch_improvement_{pr_id}"
-                flash(f'Completed iterative improvement. Processed {improvement_results["files_processed"]} files', 'success')
+                flash(f'Completed iterative improvement. Processed {len(improvement_results)} files', 'success')
                 
                 # Redirect to the improvement results page
                 return redirect(url_for('view_improvement', improvement_id=improvement_id))
             except Exception as e:
                 flash(f'Error during iterative improvement: {str(e)}', 'error')
-        
-        # Post comments to Azure DevOps if requested
-        if request.form.get('post_comments') == 'yes':
-            orchestrator.post_review_comments(int(pr_id), review_results)
-            flash('Posted review comments to Azure DevOps', 'info')
         
         flash('Code review completed successfully', 'success')
         return redirect(url_for('view_review', review_id=pr_id))
@@ -205,18 +217,10 @@ def api_list_reviews():
         for filename in os.listdir(app.config['REVIEWS_DIR']):
             if filename.startswith('complete_review_') and filename.endswith('.json'):
                 review_id = filename.replace('complete_review_', '').replace('.json', '')
-                try:
-                    with open(os.path.join(app.config['REVIEWS_DIR'], filename), 'r') as f:
-                        review_data = json.load(f)
-                        reviews.append({
-                            'id': review_id,
-                            'title': review_data.get('title', f'PR #{review_id}'),
-                            'created_by': review_data.get('created_by', 'Unknown'),
-                            'file_count': len(review_data.get('files', [])),
-                            'repository': review_data.get('repository', 'Unknown')
-                        })
-                except Exception as e:
-                    print(f"Error loading review {filename}: {str(e)}")
+                reviews.append({
+                    'id': review_id,
+                    'url': url_for('api_get_review', review_id=review_id, _external=True)
+                })
     
     return jsonify(reviews)
 
@@ -231,124 +235,123 @@ def api_get_review(review_id):
     try:
         with open(review_path, 'r') as f:
             review_data = json.load(f)
+        
         return jsonify(review_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/iterations', methods=['GET'])
-def get_iterations():
-    """API endpoint to get iterations for a pull request"""
+@app.route('/api/iterations')
+def api_get_iterations():
+    """API endpoint to get iterations for a pull request."""
     pr_id = request.args.get('pr_id')
+    
     if not pr_id:
-        return jsonify({'error': 'Missing pull request ID'}), 400
-        
+        return jsonify({'error': 'Pull request ID is required'}), 400
+    
     try:
-        client = AzureDevOpsIterationClient()
-        iterations = client.get_pull_request_iterations(int(pr_id))
-        
-        # Convert iteration objects to dictionaries
-        iteration_data = [{
-            'id': iteration.id,
-            'author': iteration.author.display_name if iteration.author else 'Unknown',
-            'date': iteration.created_date.strftime('%Y-%m-%d %H:%M:%S') if iteration.created_date else 'Unknown',
-            'description': f"Iteration {iteration.id}"
-        } for iteration in iterations]
-        
-        return jsonify(iteration_data)
+        orchestrator = MultiIterationReviewOrchestrator()
+        iterations = orchestrator.get_pull_request_iterations(int(pr_id))
+        return jsonify(iterations)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/improvement_details', methods=['GET'])
-def get_improvement_details():
-    """API endpoint to get details of file improvements"""
-    pr_id = request.args.get('pr_id')
+@app.route('/improvement/<improvement_id>')
+def view_improvement(improvement_id):
+    """View iterative improvement results."""
+    # Extract PR ID from improvement ID
+    pr_id = improvement_id.replace('batch_improvement_', '')
+    
+    # Find all improvement files for this PR
+    improvement_files = []
+    improvements_dir = os.path.join(app.config['REVIEWS_DIR'], 'improvements')
+    
+    if os.path.exists(improvements_dir):
+        for filename in os.listdir(improvements_dir):
+            if filename.endswith('.json') and '_final_' in filename:
+                try:
+                    with open(os.path.join(improvements_dir, filename), 'r') as f:
+                        improvement_data = json.load(f)
+                        file_path = filename.split('_final_')[0].replace('_', '/')
+                        improvement_files.append({
+                            'file_path': file_path,
+                            'iterations': improvement_data.get('iterations_completed', 0),
+                            'all_resolved': improvement_data.get('all_issues_resolved', False)
+                        })
+                except Exception as e:
+                    print(f"Error loading improvement file {filename}: {str(e)}")
+    
+    return render_template('improvement.html', 
+                           improvement_id=improvement_id,
+                           pr_id=pr_id,
+                           files=improvement_files)
+
+@app.route('/api/improvement_details')
+def api_get_improvement_details():
+    """API endpoint to get details of an iterative improvement for a file."""
     file_path = request.args.get('file_path')
     
-    if not pr_id or not file_path:
-        return jsonify({'error': 'Missing required parameters'}), 400
-        
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+    
+    # Convert file path to safe filename
+    safe_filename = file_path.replace('/', '_').replace('\\', '_').replace(':', '_')
+    
+    # Find the final improvement file
+    improvements_dir = os.path.join(app.config['REVIEWS_DIR'], 'improvements')
+    final_file = None
+    
+    if os.path.exists(improvements_dir):
+        for filename in os.listdir(improvements_dir):
+            if filename.startswith(safe_filename) and '_final_' in filename and filename.endswith('.json'):
+                final_file = filename
+                break
+    
+    if not final_file:
+        return jsonify({'error': 'Improvement file not found'}), 404
+    
     try:
-        # Sanitize file path for use in filename
-        sanitized_path = file_path.replace('/', '_').replace('\\', '_').replace(':', '_')
-        
-        # Construct the path to the final improvement file
-        improvement_dir = "reviews/improvements"
-        final_file_path = os.path.join(improvement_dir, f"final_improvement_{pr_id}_{sanitized_path}.json")
-        
-        # Check if file exists
-        if not os.path.exists(final_file_path):
-            return jsonify({'error': 'Improvement details not found'}), 404
-            
-        # Read the improvement details
-        with open(final_file_path, 'r') as f:
+        with open(os.path.join(improvements_dir, final_file), 'r') as f:
             improvement_data = json.load(f)
-            
+        
+        # Convert reviewer analyses to HTML
+        for iteration in improvement_data.get('iterations', []):
+            if 'reviewer_analysis' in iteration:
+                iteration['reviewer_analysis_html'] = markdown.markdown(iteration['reviewer_analysis'])
+        
         return jsonify(improvement_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/view_improvement/<improvement_id>')
-def view_improvement(improvement_id):
-    """View the results of an iterative improvement process"""
-    try:
-        # Extract PR ID from improvement ID
-        pr_id = improvement_id.replace('batch_improvement_', '')
-        
-        # Construct the path to the batch improvement file
-        improvement_dir = "reviews/improvements"
-        batch_file_path = os.path.join(improvement_dir, f"batch_improvement_{pr_id}.json")
-        
-        # Check if file exists
-        if not os.path.exists(batch_file_path):
-            flash('Improvement results not found', 'error')
-            return redirect(url_for('index'))
-            
-        # Read the improvement results
-        with open(batch_file_path, 'r') as f:
-            improvement_results = json.load(f)
-            
-        return render_template('improvement.html', improvement_results=improvement_results)
-    except Exception as e:
-        flash(f'Error loading improvement results: {str(e)}', 'error')
-        return redirect(url_for('index'))
-
 def generate_diff_html(old_content, new_content, file_path):
     """Generate HTML diff between old and new content."""
-    if old_content is None:
-        old_content = ''
+    # Determine the lexer based on file extension
+    try:
+        _, ext = os.path.splitext(file_path)
+        lexer = get_lexer_by_name(ext[1:])  # Remove the dot from extension
+    except:
+        # If we can't determine the lexer from extension, try to guess
+        try:
+            lexer = guess_lexer(new_content)
+        except:
+            # Default to Python if we can't guess
+            lexer = get_lexer_by_name('python')
     
-    # Get file extension for syntax highlighting
-    file_ext = os.path.splitext(file_path)[1][1:]
-    
-    # Create diff
-    diff = difflib.HtmlDiff(tabsize=4)
-    diff_html = diff.make_table(
+    # Generate diff
+    diff = difflib.unified_diff(
         old_content.splitlines(),
         new_content.splitlines(),
-        fromdesc="Before",
-        todesc="After",
-        context=True,
-        numlines=3
+        lineterm=''
     )
+    
+    # Convert diff to HTML
+    formatter = HtmlFormatter(style='colorful')
+    diff_html = highlight('\n'.join(diff), lexer, formatter)
+    
+    # Add CSS for syntax highlighting
+    css = formatter.get_style_defs('.highlight')
+    diff_html = f'<style>{css}</style>{diff_html}'
     
     return diff_html
 
-def highlight_code(code, file_path):
-    """Highlight code using Pygments."""
-    try:
-        # Try to get lexer by file extension
-        file_ext = os.path.splitext(file_path)[1][1:]
-        if file_ext:
-            lexer = get_lexer_by_name(file_ext)
-        else:
-            # Guess lexer based on content
-            lexer = guess_lexer(code)
-    except:
-        # Default to Python if we can't determine the language
-        lexer = get_lexer_by_name('python')
-    
-    formatter = HtmlFormatter(linenos=True, cssclass="source")
-    return highlight(code, lexer, formatter)
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=config.get('DEBUG', False), host='0.0.0.0', port=5000)

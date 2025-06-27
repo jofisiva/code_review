@@ -9,6 +9,7 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
   - **Reviewer Agent**: Reviews code critically, identifying bugs, security issues, and suggesting improvements
   - **Iteration Analyzer**: Analyzes changes across multiple iterations of a pull request, tracking how code evolves
   - **Iterative Improvement Loop**: Automatically applies Reviewer Agent suggestions through the Coder Agent until all issues are resolved
+  - **Local LLM Support**: Use local LLM models (Ollama, LM Studio, etc.) instead of OpenAI API
 
 - **Azure DevOps Integration**:
   - Fetches pull request details and changed files
@@ -34,7 +35,8 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
 
 - Python 3.7+
 - Azure DevOps account with a Personal Access Token (PAT)
-- OpenAI API key
+- OpenAI API key (optional if using local LLM)
+- Local LLM server (optional, e.g., Ollama, LM Studio, LocalAI)
 
 ### Installation
 
@@ -66,6 +68,12 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
    OPENAI_MODEL_CODER=gpt-4
    OPENAI_MODEL_REVIEWER=gpt-4
 
+   # Local LLM Configuration
+   USE_LOCAL_LLM=false
+   LOCAL_LLM_API_URL=http://localhost:11434
+   LOCAL_LLM_API_TYPE=ollama
+   LOCAL_LLM_MODEL=llama3
+
    # Application Configuration
    DEBUG=False
    ```
@@ -81,7 +89,7 @@ A sophisticated code review system that uses multiple AI agents to analyze and r
 
 2. Open your browser and navigate to `http://localhost:5000`
 
-3. Enter an Azure DevOps pull request ID and click "Start Review"
+3. Enter an Azure DevOps pull request ID, optionally enable "Use Local LLM", and click "Start Review"
 
 4. For multi-iteration reviews:
    - Click "Fetch Iterations" to get available iterations for the PR
@@ -113,6 +121,31 @@ The system also provides API endpoints for integration with other tools:
 - `GET /api/iterations`: Get iterations for a pull request
 - `GET /api/improvement_details`: Get details of iterative improvements for a file
 
+## Local LLM Support
+
+The system supports using local LLM models as an alternative to OpenAI's API:
+
+1. **Supported Local LLM Servers**:
+   - **Ollama**: Default configuration, access via http://localhost:11434
+   - **LM Studio**: Compatible with the system
+   - **LocalAI**: Compatible with the system
+   - **Text Generation WebUI**: Compatible with the system
+
+2. **Configuration**:
+   - Set `USE_LOCAL_LLM=true` in your `.env` file to enable local LLM by default
+   - Configure `LOCAL_LLM_API_URL`, `LOCAL_LLM_API_TYPE`, and `LOCAL_LLM_MODEL` in `.env`
+   - Toggle "Use Local LLM" in the web interface when starting a review
+
+3. **Using with Ollama**:
+   - Install Ollama from [ollama.ai](https://ollama.ai)
+   - Pull a model: `ollama pull llama3` or another model of your choice
+   - Update the `LOCAL_LLM_MODEL` in `.env` to match your pulled model
+   - Start the system with local LLM enabled
+
+4. **Testing Local LLM**:
+   - Run `python test_ollama.py` to test basic connectivity
+   - Run `python test_code_review_with_ollama.py` to test the code review functionality
+
 ## Architecture
 
 The system consists of the following components:
@@ -127,6 +160,7 @@ The system consists of the following components:
    - Reviewer Agent: Reviews code and provides feedback
    - Iteration Analyzer: Analyzes changes across multiple iterations
    - Iterative Improvement Loop: Applies reviewer suggestions automatically through multiple improvement cycles
+   - Local LLM Client: Provides interface to local LLM models as an alternative to OpenAI
 
 3. **Code Review Orchestrators**:
    - **Code Review Orchestrator**: Basic orchestrator for single-iteration reviews
